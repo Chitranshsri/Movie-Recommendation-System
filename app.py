@@ -4,6 +4,7 @@ import pandas as pd
 import numpy as np
 import requests
 import os
+import sys
 import socket
 
 # CHANGE: Configured modern page metadata, wide layout, and collapsed sidebar.
@@ -15,11 +16,13 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# CHANGE: Added a lightweight DNS fallback for api.themoviedb.org.
-# PURPOSE: Certain ISPs (such as Reliance Jio in India) sinkhole TMDB's API domain
-#          to an unreachable IP, causing ConnectTimeout. This resolves the real
-#          CloudFront IP via public DNS over HTTPS without altering system settings.
+# CHANGE: Added lightweight DNS fallback ONLY for local Windows environments.
+# PURPOSE: Certain Indian ISPs (such as Reliance Jio) sinkhole TMDB's API domain
+#          to an unreachable IP. On Linux/Streamlit Cloud, standard AWS DNS is used.
 def setup_tmdb_dns_fallback():
+    if sys.platform != "win32":
+        return  # Linux / Cloud deployment environments have clean DNS
+
     host = "api.themoviedb.org"
     try:
         ip = socket.gethostbyname(host)
@@ -27,7 +30,7 @@ def setup_tmdb_dns_fallback():
         s.settimeout(1.0)
         s.connect((ip, 443))
         s.close()
-        return  # Default DNS works fine (e.g., in cloud deployment)
+        return  # Default DNS works fine
     except Exception:
         pass
 
@@ -56,36 +59,53 @@ def setup_tmdb_dns_fallback():
 
 setup_tmdb_dns_fallback()
 
-# CHANGE: Replaced hardcoded API key with Streamlit secrets and environment variable lookup.
-# PURPOSE: Keep credentials secure for GitHub and deployment while allowing local execution.
+# CHANGE: Replaced hardcoded API key with flexible, case-insensitive secrets lookup.
+# PURPOSE: Seamlessly read TMDB_API_KEY from Streamlit Cloud Secrets or local secrets.toml.
 def get_tmdb_api_key():
-    if hasattr(st, "secrets") and "TMDB_API_KEY" in st.secrets:
-        return st.secrets["TMDB_API_KEY"]
-    return os.environ.get("TMDB_API_KEY", "")
+    key = ""
+    if hasattr(st, "secrets"):
+        for k in ["TMDB_API_KEY", "tmdb_api_key", "api_key", "API_KEY", "TMDB_KEY"]:
+            if k in st.secrets:
+                key = str(st.secrets[k])
+                break
+    if not key:
+        key = os.environ.get("TMDB_API_KEY", os.environ.get("API_KEY", ""))
+    return key.strip().strip('"').strip("'")
 
 FALLBACK_POSTER_URL = "https://placehold.co/500x750.png?text=No+Poster"
 session = requests.Session()
 session.headers.update({"User-Agent": "Mozilla/5.0"})
 
-# CHANGE: Added @st.cache_data to cache poster requests across reruns and prevent duplicate network calls.
-# PURPOSE: Significantly improve UI responsiveness and avoid hitting TMDB rate limits.
+# CHANGE: Added dual support for standard v3 API keys and v4 Bearer tokens with diagnostics.
+# PURPOSE: Support both TMDB v3 API keys and v4 Read Access Tokens without configuration errors.
 @st.cache_data(show_spinner=False)
 def fetch_poster(movie_id):
     api_key = get_tmdb_api_key()
     if not api_key:
+        print("[TMDB ERROR] No API key detected in st.secrets or os.environ.")
         return FALLBACK_POSTER_URL
 
-    url = f"https://api.themoviedb.org/3/movie/{movie_id}?api_key={api_key}&language=en-US"
+    headers = {"User-Agent": "Mozilla/5.0"}
+    if len(api_key) > 50 or api_key.startswith("eyJ"):
+        # TMDB v4 Read Access Token (JWT Bearer Auth)
+        headers["Authorization"] = f"Bearer {api_key}"
+        headers["accept"] = "application/json"
+        url = f"https://api.themoviedb.org/3/movie/{movie_id}?language=en-US"
+    else:
+        # Standard TMDB v3 API Key (32 hex characters)
+        url = f"https://api.themoviedb.org/3/movie/{movie_id}?api_key={api_key}&language=en-US"
+
     try:
-        response = session.get(url, timeout=5)
+        response = session.get(url, headers=headers, timeout=5)
         if response.status_code == 200:
             data = response.json()
             poster_path = data.get("poster_path")
             if poster_path:
                 return "https://image.tmdb.org/t/p/w500" + poster_path
-    except Exception:
-        # Gracefully handle timeouts, connection errors, and missing data
-        pass
+        else:
+            print(f"[TMDB ERROR] Movie ID {movie_id}: Status {response.status_code}, Response: {response.text[:200]}")
+    except Exception as e:
+        print(f"[TMDB EXCEPTION] Movie ID {movie_id}: {type(e).__name__}: {e}")
 
     return FALLBACK_POSTER_URL
 
