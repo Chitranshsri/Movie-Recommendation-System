@@ -117,41 +117,52 @@ def load_data():
 
 movies, similarity = load_data()
 
-# FEATURE: Cached lookup for verified movie metadata from tmdb_5000_movies.csv.
-# PURPOSE: Power the interactive movie details modal with authentic ratings, release dates, and synopses.
+# FEATURE: Cached lookup for rich metadata including director, cast, genres, and synopsis.
+# PURPOSE: Provide rich authentic details inside the overview modal without external latency.
 @st.cache_resource
 def load_metadata():
     base_dir = os.path.dirname(os.path.abspath(__file__))
-    csv_path = os.path.join(base_dir, "tmdb_5000_movies.csv")
+    csv_path = os.path.join(base_dir, "movie_metadata.csv")
     if os.path.exists(csv_path):
         try:
             df = pd.read_csv(csv_path)
-            return df.set_index("id")[["title", "release_date", "vote_average", "overview"]].to_dict("index")
+            return df.set_index("id").to_dict("index")
         except Exception:
             return {}
     return {}
 
 movie_metadata = load_metadata()
 
-def recommend(movie):
-    # Search in the loaded DataFrame 'movies'
+# FEATURE: Optional genre filtering built cleanly on top of cosine similarity distance ranking.
+# PURPOSE: Enable users to explore specific genres while preserving exact baseline when 'All Genres' is chosen.
+def recommend(movie, genre_filter="All Genres"):
     movie_index = movies[movies['title'] == movie].index[0]
     distances = similarity[movie_index]
-    movies_list = sorted(list(enumerate(distances)), reverse=True, key=lambda x: x[1])[1:6]
+    sorted_indices = sorted(list(enumerate(distances)), reverse=True, key=lambda x: x[1])[1:]
 
     recommended_movies = []
     recommended_movie_posters = []
 
-    for i in movies_list:
-        movie_id = movies.iloc[i[0]].movie_id
-        recommended_movies.append(movies.iloc[i[0]].title)
-        # to fetch movie poster by id and API
-        recommended_movie_posters.append(fetch_poster(movie_id))
+    for i in sorted_indices:
+        if len(recommended_movies) >= 5:
+            break
+        cand_id = movies.iloc[i[0]].movie_id
+        cand_title = movies.iloc[i[0]].title
+
+        # If genre filter active, verify candidate matches selected genre
+        if genre_filter and genre_filter != "All Genres":
+            m_info = movie_metadata.get(cand_id, {})
+            genres = [g.strip() for g in str(m_info.get("genre_names", "")).split(",") if g.strip()]
+            if genre_filter not in genres:
+                continue
+
+        recommended_movies.append(cand_title)
+        recommended_movie_posters.append(fetch_poster(cand_id))
 
     return recommended_movies, recommended_movie_posters
 
-# FEATURE: Interactive movie overview modal using native Streamlit dialog.
-# PURPOSE: Provide rich cinematic details (synopsis, release year, rating) without navigating away.
+# FEATURE: Rich movie overview modal with synopsis, director, top cast, and genre pills.
+# PURPOSE: Offer comprehensive cinematic metadata directly inside the interactive modal.
 @st.dialog("Movie Overview")
 def show_movie_details(movie_id, title, poster_url):
     info = movie_metadata.get(movie_id, {})
@@ -159,6 +170,9 @@ def show_movie_details(movie_id, title, poster_url):
     year = rel_date[:4] if len(rel_date) >= 4 else "N/A"
     rating = info.get("vote_average", None)
     overview = info.get("overview", "No synopsis available for this title.")
+    director = info.get("director", "")
+    top_cast = info.get("top_cast", "")
+    genre_names = str(info.get("genre_names", ""))
 
     col_img, col_info = st.columns([1, 1.8], gap="medium")
     with col_img:
@@ -167,19 +181,30 @@ def show_movie_details(movie_id, title, poster_url):
         except TypeError:
             st.image(poster_url, use_container_width=True)
     with col_info:
-        st.markdown(f"<h3 style='margin-top:0; color:#ffffff;'>{title}</h3>", unsafe_allow_html=True)
+        st.markdown(f"<h3 style='margin-top:0; color:#ffffff; font-weight:800;'>{title}</h3>", unsafe_allow_html=True)
+
         meta_items = []
         if year != "N/A":
             meta_items.append(f"<span style='color:#9ca3af;'>Year:</span> <strong style='color:#f3f4f6;'>{year}</strong>")
         if rating is not None and not pd.isna(rating):
             meta_items.append(f"<span style='color:#9ca3af;'>Rating:</span> <strong style='color:#f59e0b;'>★ {rating:.1f}/10</strong>")
         if meta_items:
-            st.markdown(f"<div style='margin-bottom:1rem; font-size:0.95rem;'>{' &nbsp;|&nbsp; '.join(meta_items)}</div>", unsafe_allow_html=True)
-        st.markdown("<hr style='border-color: rgba(255,255,255,0.1); margin: 0.8rem 0;'>", unsafe_allow_html=True)
-        st.markdown(f"<p style='color:#d1d5db; line-height:1.6; font-size:0.92rem;'>{overview}</p>", unsafe_allow_html=True)
+            st.markdown(f"<div style='margin-bottom:0.8rem; font-size:0.92rem;'>{' &nbsp;|&nbsp; '.join(meta_items)}</div>", unsafe_allow_html=True)
 
-# UI CHANGE: Professional CineVerse CSS with dark cinematic aesthetic and cohesive component borders.
-# PURPOSE: Fix all container misalignment, detached text boxes, and inconsistent card spacing.
+        if genre_names and genre_names != "nan":
+            genre_pills = " ".join([f"<span class='genre-pill'>{g.strip()}</span>" for g in genre_names.split(",") if g.strip()])
+            st.markdown(f"<div style='margin-bottom:0.9rem;'>{genre_pills}</div>", unsafe_allow_html=True)
+
+        if director and str(director) != "nan" and director != "N/A":
+            st.markdown(f"<p style='margin:0.2rem 0; font-size:0.88rem;'><span style='color:#9ca3af;'>Director:</span> <strong style='color:#e5e7eb;'>{director}</strong></p>", unsafe_allow_html=True)
+
+        if top_cast and str(top_cast) != "nan":
+            st.markdown(f"<p style='margin:0.2rem 0; font-size:0.88rem;'><span style='color:#9ca3af;'>Starring:</span> <strong style='color:#e5e7eb;'>{top_cast}</strong></p>", unsafe_allow_html=True)
+
+        st.markdown("<hr style='border-color: rgba(255,255,255,0.1); margin: 0.8rem 0;'>", unsafe_allow_html=True)
+        st.markdown(f"<p style='color:#d1d5db; line-height:1.6; font-size:0.9rem;'>{overview}</p>", unsafe_allow_html=True)
+
+# UI CHANGE: Professional CineVerse CSS styling with dark theme, responsive grid, and badge styling.
 st.markdown("""
 <style>
     /* Dark cinematic background */
@@ -240,17 +265,6 @@ st.markdown("""
         line-height: 1.5;
     }
 
-    /* Unified Search Discovery Card */
-    div[data-testid="stVerticalBlockBorderWrapper"]:has(.search-anchor) {
-        background: rgba(17, 24, 39, 0.7) !important;
-        border: 1px solid rgba(255, 255, 255, 0.1) !important;
-        border-radius: 16px !important;
-        padding: 1.6rem 2rem !important;
-        box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.6) !important;
-        backdrop-filter: blur(14px) !important;
-        margin-bottom: 2.5rem !important;
-    }
-
     /* Streamlit Selectbox custom styling */
     div[data-baseweb="select"] {
         border-radius: 10px !important;
@@ -266,7 +280,7 @@ st.markdown("""
         color: #ffffff !important;
     }
 
-    /* Primary Recommendation Action Button */
+    /* Primary Action Button */
     div.stButton > button {
         width: 100%;
         background: linear-gradient(135deg, #e50914 0%, #b81d24 100%) !important;
@@ -288,7 +302,7 @@ st.markdown("""
         background: linear-gradient(135deg, #f40b17 0%, #c42028 100%) !important;
     }
 
-    /* Details secondary buttons on cards */
+    /* Card Details secondary buttons */
     .card-col div.stButton > button {
         background: rgba(255, 255, 255, 0.08) !important;
         color: #d1d5db !important;
@@ -336,7 +350,7 @@ st.markdown("""
         letter-spacing: 0.5px;
     }
 
-    /* Unified Movie Card Container */
+    /* Movie Card Grid */
     div[data-testid="column"] {
         background: rgba(17, 24, 39, 0.65);
         border: 1px solid rgba(255, 255, 255, 0.08);
@@ -408,6 +422,20 @@ st.markdown("""
         color: #9ca3af;
         margin-bottom: 0.4rem;
     }
+
+    /* Genre Pill Badge */
+    .genre-pill {
+        display: inline-block;
+        font-size: 0.72rem;
+        padding: 0.2rem 0.6rem;
+        border-radius: 6px;
+        background: rgba(255, 75, 75, 0.12);
+        color: #ff7575;
+        border: 1px solid rgba(255, 75, 75, 0.25);
+        font-weight: 500;
+        margin-right: 0.35rem;
+        margin-bottom: 0.35rem;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -423,29 +451,45 @@ st.markdown("""
 # Unified Hero Discovery Section
 movies_titles = movies['title'].values
 
+# Collect unique genres for the optional filter dropdown
+available_genres = [
+    "All Genres", "Action", "Adventure", "Animation", "Comedy", "Crime",
+    "Drama", "Family", "Fantasy", "History", "Horror", "Music",
+    "Mystery", "Romance", "Science Fiction", "Thriller", "War", "Western"
+]
+
 _, center_col, _ = st.columns([1, 4, 1])
 with center_col:
     with st.container(border=True):
-        st.markdown('<span class="search-anchor"></span>', unsafe_allow_html=True)
         st.markdown("<div style='font-size:0.95rem; font-weight:600; margin-bottom:0.4rem; color:#e5e7eb;'>Search or select a movie</div>", unsafe_allow_html=True)
-        selected_movie_name = st.selectbox(
-            "Search or select a movie",
-            movies_titles,
-            index=0,
-            label_visibility="collapsed",
-            help="Type to search among 4,800+ movies"
-        )
-        st.markdown("<div style='height: 0.5rem;'></div>", unsafe_allow_html=True)
+        col_sel, col_gen = st.columns([3, 1.4])
+        with col_sel:
+            selected_movie_name = st.selectbox(
+                "Movie Title",
+                movies_titles,
+                index=0,
+                label_visibility="collapsed",
+                help="Type to search among 4,800+ movies"
+            )
+        with col_gen:
+            selected_genre = st.selectbox(
+                "Genre Filter",
+                available_genres,
+                index=0,
+                label_visibility="collapsed",
+                help="Filter recommendations by genre"
+            )
+        st.markdown("<div style='height: 0.4rem;'></div>", unsafe_allow_html=True)
         recommend_button = st.button("DISCOVER SIMILAR MOVIES")
 
 # Session state management to keep recommendations persistent during card interactions
 if recommend_button:
     with st.spinner("Analyzing similarity vectors and curating recommendations..."):
-        rec_names, rec_posters = recommend(selected_movie_name)
-        # Match IDs from DataFrame for reliable metadata lookup
+        rec_names, rec_posters = recommend(selected_movie_name, selected_genre)
         rec_ids = [movies[movies['title'] == n].iloc[0].movie_id for n in rec_names]
         st.session_state["cineverse_results"] = {
             "selected_movie": selected_movie_name,
+            "selected_genre": selected_genre,
             "names": rec_names,
             "posters": rec_posters,
             "ids": rec_ids
@@ -454,13 +498,15 @@ if recommend_button:
 if "cineverse_results" in st.session_state:
     res = st.session_state["cineverse_results"]
     selected_name = res["selected_movie"]
+    active_genre = res.get("selected_genre", "All Genres")
     names = res["names"]
     posters = res["posters"]
     ids = res["ids"]
 
+    genre_note = f" &bull; <em>{active_genre}</em>" if active_genre != "All Genres" else ""
     st.markdown(f"""
     <div class="results-heading">
-        <div class="results-title">Recommended For You <span style="color: #9ca3af; font-size: 0.95rem; font-weight: 400;">based on <em>{selected_name}</em></span></div>
+        <div class="results-title">Recommended For You <span style="color: #9ca3af; font-size: 0.95rem; font-weight: 400;">based on <em>{selected_name}</em>{genre_note}</span></div>
         <div class="results-badge">TOP 5 MATCHES</div>
     </div>
     """, unsafe_allow_html=True)
