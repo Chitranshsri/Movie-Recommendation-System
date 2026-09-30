@@ -1,43 +1,69 @@
-# 🎬 CineVerse — Intelligent Movie Recommender System
+# CineVerse
 
-A modern, cinematic movie recommendation web application built with **Python**, **Streamlit**, and **Scikit-Learn**, powered by content-based filtering and the **TMDB (The Movie Database) API**.
+CineVerse is a content-based movie recommendation web application built with Python and Streamlit. It leverages vectorized textual metadata and cosine similarity to recommend films based on user selection, integrating with The Movie Database (TMDB) API to render dynamic poster art and verified metadata.
 
-![Python](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python)
-![Streamlit](https://img.shields.io/badge/Streamlit-1.64.0-red?logo=streamlit)
-![Pandas](https://img.shields.io/badge/Pandas-DataFrames-yellow?logo=pandas)
-![NumPy](https://img.shields.io/badge/NumPy-Vectors-blue?logo=numpy)
+## Features
 
----
+- Content-Based Filtering: Computes pairwise cosine similarity over preprocessed tags comprising genres, keywords, overview, top cast members, and director.
+- Cinematic User Interface: Modern dark layout featuring responsive cards, match rankings, and interactive overview modals.
+- Authentic Metadata: Integrates TMDB API and dataset attributes for verified release dates, vote averages, and synopses without fabricated data.
+- Resilient API Architecture: Features request timeouts, connection session pooling, and graceful fallback handling for missing posters or network interruptions.
+- In-Memory Caching: Utilizes Streamlit resource and data caching for efficient model loading and minimal API overhead.
 
-## 🌟 Key Features
+## How It Works
 
-- **Content-Based Filtering**: Recommends movies using cosine similarity on precomputed vector embeddings (genres, keywords, cast, crew, and overview).
-- **Cinematic Dark UI**: Modern streaming-platform visual aesthetic with responsive movie cards, hover elevations, and clean typography.
-- **Dynamic Poster Fetching**: High-resolution movie posters retrieved dynamically via the TMDB API.
-- **Fault-Tolerant & Resilient**: Graceful error handling and fallback placeholders for missing posters, network timeouts, or invalid entries.
-- **Streamlit Caching**: Optimized in-memory caching for instant model loading and fast user interactions.
+1. Feature Engineering: The TMDB 5,000 Movies and Credits datasets are merged on title. Selected features (overview, genres, keywords, cast, and crew) are normalized, tokenized, and stemmed into unified tag strings.
+2. Vectorization: A CountVectorizer constructs a 5,000-dimensional bag-of-words representation for each film.
+3. Similarity Matrix: Pairwise cosine similarity is computed across all 4,806 titles, generating a 4,806 x 4,806 similarity matrix.
+4. Recommendation Retrieval: When a movie is selected, the application retrieves its similarity vector, sorts top distance scores in descending order, and extracts the top five matches.
+5. Poster & Metadata Resolution: The application retrieves official posters via TMDB API endpoints and pulls synopses from verified dataset records.
 
----
+## Tech Stack
 
-## 🚀 Quick Start (Local Setup)
+- Application Framework: Streamlit
+- Machine Learning & Vectorization: Scikit-Learn, NumPy
+- Data Manipulation: Pandas
+- API Communication: Requests
+- Serialization: Pickle
 
-### 1. Clone the Repository
+## Project Structure
 
-```bash
-git clone https://github.com/Chitranshsri/movie-recommendr-system.git
-cd movie-recommendr-system
+```text
+CineVerse/
+├── .streamlit/
+│   └── secrets.toml              # Local secrets configuration (git-ignored)
+├── app.py                        # Streamlit web application
+├── Movie-Recommender-System.ipynb# Preprocessing and vectorization notebook
+├── movies.pkl                    # Serialized DataFrame containing processed titles and tags
+├── similarity.pkl                # Serialized cosine similarity matrix (float64)
+├── tmdb_5000_movies.csv          # Metadata dataset for verified movie details
+├── requirements.txt              # Production dependencies
+├── .gitignore                    # Version control ignore rules
+├── .gitattributes                # Git LFS tracking rules
+└── README.md                     # Technical documentation
 ```
 
-### 2. Create and Activate a Virtual Environment
+## Dataset / Model
+
+- Primary Datasets: TMDB 5,000 Movies Dataset and TMDB 5,000 Credits Dataset.
+- Total Titles: 4,806 unique films.
+- Matrix Dimensions: 4,806 x 4,806 cosine similarity matrix stored in similarity.pkl.
+- Precision: Standard float64 precision preserved to guarantee mathematical accuracy.
+
+## Installation
+
+### 1. Clone Repository
 
 ```bash
-# Windows
-python -m venv .venv
-.venv\Scripts\activate
+git clone https://github.com/Chitranshsri/CineVerse.git
+cd CineVerse
+```
 
-# macOS / Linux
-python3 -m venv .venv
-source .venv/bin/activate
+### 2. Configure Virtual Environment
+
+```bash
+python -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 ```
 
 ### 3. Install Dependencies
@@ -46,57 +72,41 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 4. Configure TMDB API Key
+## Running Locally
 
-Create a `.streamlit/secrets.toml` file in the project root:
+1. Create a `.streamlit/secrets.toml` file in the root directory:
 
 ```toml
 TMDB_API_KEY = "your_tmdb_api_key_here"
 ```
 
-*(You can obtain a free API key from [The Movie Database](https://www.themoviedb.org/settings/api)).*
-
-### 5. Launch the Application
+2. Run the application:
 
 ```bash
 streamlit run app.py
 ```
 
-The application will automatically open at `http://localhost:8501`.
+The application will launch at `http://localhost:8501`.
 
----
+## Deployment
 
-## ☁️ Deployment (Streamlit Community Cloud)
+For deployment on Streamlit Community Cloud:
 
-1. Fork or push this repository to your GitHub account.
-2. Ensure `movies.pkl` and `similarity.pkl` are tracked with **Git LFS** (`git lfs install && git lfs track "*.pkl"`).
-3. Log in to [Streamlit Community Cloud](https://share.streamlit.io/) and create a **New App**.
-4. Select your repository, branch (`main`), and set the main file path to `app.py`.
-5. Under **App Settings -> Secrets**, add:
-   ```toml
-   TMDB_API_KEY = "your_tmdb_api_key_here"
-   ```
-6. Click **Deploy**!
+1. Push the repository to GitHub. Ensure `similarity.pkl` and `movies.pkl` are tracked with Git LFS (`git lfs install && git lfs track "*.pkl"`).
+2. Connect your GitHub repository to Streamlit Community Cloud (`share.streamlit.io`).
+3. Set the main file path to `app.py`.
+4. Under App Settings -> Secrets, provide your TMDB credentials:
 
----
-
-## 🛠️ Project Structure
-
-```text
-movie-recommendr-system/
-├── .streamlit/
-│   └── secrets.toml          # Local secrets (ignored by Git)
-├── app.py                    # Main Streamlit application
-├── movies.pkl                # Processed movie metadata (DataFrame)
-├── similarity.pkl            # Precomputed cosine similarity matrix
-├── requirements.txt          # Python dependencies
-├── .gitignore                # Git ignore configuration
-├── .gitattributes            # Git LFS tracking rules
-└── README.md                 # Project documentation
+```toml
+TMDB_API_KEY = "your_tmdb_api_key_here"
 ```
 
----
+5. Deploy.
 
-## 📄 License
+## Notebook
 
-This project is open source and available under the [MIT License](LICENSE).
+The Jupyter notebook `Movie-Recommender-System.ipynb` is included in the root directory. It contains the end-to-end data ingestion, merging, natural language preprocessing, stemming, vectorization, and model serialization steps.
+
+## Author
+
+Chitranshsri
