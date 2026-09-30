@@ -1,0 +1,17 @@
+# Virtual environment
+.venv/
+venv/
+ENV/
+
+# Secrets and local configuration (never commit secrets to git)
+.streamlit/secrets.toml
+.env
+
+# IDE and editors
+.idea/
+.vscode/
+
+# Python cache and bytecode
+__pycache__/
+*.py[cod]
+*$py.class
